@@ -30,12 +30,6 @@ const userSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
-    taskHistory: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Task",
-      },
-    ],
     watchHistory: [
       {
         type: mongoose.Schema.Types.ObjectId,

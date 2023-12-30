@@ -4,6 +4,24 @@ const { uploadOnCloud } = require("../utils/cloudinary.js");
 const { responseHandler } = require("../utils/responseHandler.js");
 const User = require("../models/user.model.js");
 
+const generateAccessAndRefreshToken = async (user_id) => {
+  try {
+    const user = await User.findById(user_id);
+    const accessToken = await user.generateAccessToken();
+    const refreshToken = await user.generateRefreshToken();
+
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
+
+    return { accessToken, refreshToken };
+  } catch (error) {
+    throw new errorHandler(
+      500,
+      "Something went wrong while generating access and refresh tokens"
+    );
+  }
+};
+
 const registerUser = asyncHandler(async (req, res) => {
   // TODO-DONE: Take all details from user through body -> fullname, username, password, email, avatar, coverImage(if given)
   // TODO-DONE: Validation of the information given -> whether all required details given or not -> fullname, email, password, username, avatar
@@ -86,4 +104,75 @@ const registerUser = asyncHandler(async (req, res) => {
     );
 });
 
-module.exports = { registerUser };
+const loginUser = asyncHandler(async (req, res) => {
+  // TODO-DONE: Take details of user through body -> username, email, password
+  // TODO-DONE: validation of user's input
+  // TODO-DONE: check whether the user exist in the database of not
+  // TODO-DONE: if user don't exist return a message "User don't exist with given ID"
+  // TODO-DONE: else check the user entered password and password saved in database
+  // TODO-DONE: generate access token and refresh token
+  // TODO-DONE: save refresh token into user's detail database
+  // TODO-DONE: and save access token in browser's cookie
+  // TODO-DONE: return the response of the user without password and refresh token
+
+  const { username, email, password } = req.body;
+  if ([username, email, password].some((field) => field?.trim() === "")) {
+    throw new errorHandler(400, "All fields are required");
+  }
+
+  const existedUser = await User.findOne({ $or: [{ username }, { email }] });
+  if (!existedUser) {
+    throw new errorHandler(400, "No user exist with given username or ID");
+  }
+
+  const isPasswordValid = await existedUser.matchPassword(password);
+  if (!isPasswordValid) {
+    throw new errorHandler(400, "Password and ID don't match");
+  }
+
+  const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+    existedUser._id
+  );
+
+  const user = await User.findById(existedUser._id).select(
+    "-password -refreshToken"
+  );
+
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  return res
+    .status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+      new responseHandler(
+        200,
+        { user: user, accessToken, refreshToken },
+        "User logged in successfully"
+      )
+    );
+});
+
+const logoutUser = asyncHandler(async (req, res) => {
+  await User.findByIdAndUpdate(
+    req.userDetails?._id,
+    {
+      $set: { refreshToken: "" },
+    },
+    { new: true }
+  );
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+  return res
+    .status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(new responseHandler({}, "User logged out successfully", 200));
+});
+
+module.exports = { registerUser, loginUser, logoutUser };

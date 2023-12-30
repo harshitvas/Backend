@@ -8,14 +8,15 @@ cloudinary.config({
 });
 
 const uploadOnCloud = async (localFilePath) => {
-  if (!localFilePath) {
-    console.log("File path is not correct");
-    return null;
-  }
   try {
+    if (!localFilePath) {
+      console.log("File path is not correct");
+      return null;
+    }
     const cloudResponse = await cloudinary.uploader.upload(localFilePath, {
       resource_type: "auto",
     });
+    fs.unlinkSync(localFilePath);
     return cloudResponse;
   } catch (error) {
     fs.unlinkSync(localFilePath);
