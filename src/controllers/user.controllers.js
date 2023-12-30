@@ -3,13 +3,13 @@ const { errorHandler } = require("../utils/errorHandler.js");
 const { uploadOnCloud } = require("../utils/cloudinary.js");
 const { responseHandler } = require("../utils/responseHandler.js");
 const User = require("../models/user.model.js");
+const jwt = require("jsonwebtoken");
 
 const generateAccessAndRefreshToken = async (user_id) => {
   try {
     const user = await User.findById(user_id);
     const accessToken = await user.generateAccessToken();
     const refreshToken = await user.generateRefreshToken();
-
     user.refreshToken = refreshToken;
     await user.save({ validateBeforeSave: false });
 
@@ -157,6 +157,10 @@ const loginUser = asyncHandler(async (req, res) => {
 });
 
 const logoutUser = asyncHandler(async (req, res) => {
+  // TODO-DONE: take user's id through middleware
+  // TODO-DONE: reset refresh token to ""
+  // TODO-DONE: delete cookie having access and refresh tokens
+  // TODO-DONE: return response with a message "User Logged out successfully"
   await User.findByIdAndUpdate(
     req.userDetails?._id,
     {
@@ -175,4 +179,56 @@ const logoutUser = asyncHandler(async (req, res) => {
     .json(new responseHandler({}, "User logged out successfully", 200));
 });
 
-module.exports = { registerUser, loginUser, logoutUser };
+const refreshAccessToken = asyncHandler(async (req, res) => {
+  const incomingToken = req.cookies?.refreshToken || req.body?.refreshToken;
+
+  if (!incomingToken) {
+    throw new errorHandler(401, "Unauthorized request on server");
+  }
+
+  try {
+    const userData = await jwt.verify(
+      incomingToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+
+    const user = await User.findById(userData?._id);
+
+    if (!user) {
+      throw new errorHandler(401, "No use exist with given refresh token");
+    }
+
+    if (incomingToken !== user?.refreshToken) {
+      throw new errorHandler(401, "Tokens don't match");
+    }
+
+    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+      user._id
+    );
+
+    const options = {
+      httpOnly: true,
+      secure: true,
+    };
+
+    return res
+      .status(200)
+      .cookie("accessToken", accessToken, options)
+      .cookie("refreshToken", refreshToken, options)
+      .json(
+        new responseHandler(
+          {},
+          { accessToken, refreshToken },
+          "New tokens created",
+          200
+        )
+      );
+  } catch (error) {
+    throw new errorHandler(
+      400,
+      "Something went wrong while re-generating tokens"
+    );
+  }
+});
+
+module.exports = { registerUser, loginUser, logoutUser, refreshAccessToken };
