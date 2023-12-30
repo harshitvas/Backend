@@ -231,4 +231,118 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
   }
 });
 
-module.exports = { registerUser, loginUser, logoutUser, refreshAccessToken };
+const updatePassword = asyncHandler(async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  if ([oldPassword, newPassword].some((field) => field?.trim() === "")) {
+    throw new errorHandler(
+      400,
+      "Old password and new password both are required"
+    );
+  }
+
+  const user = await User.findById(req.userDeatils?._id);
+  const isPasswordCorrect = await user.matchPassword(oldPassword);
+  if (!isPasswordCorrect) {
+    throw new errorHandler(400, "User entered wrong old password");
+  }
+
+  user.password = newPassword;
+  await user.save({ validateBeforeSave: false });
+
+  return res.status(200).json(new responseHandler({}, "Password updated", 200));
+});
+
+const getCurrentUser = asyncHandler(async (req, res) => {
+  return res
+    .status(200)
+    .json(new responseHandler(req.userDeatils, "Data of current user", 200));
+});
+
+const updateFullnameAndEmail = asyncHandler(async (req, res) => {
+  const { fullname, email } = req.body;
+  if ([fullname, email].some((field) => field?.trim() === "")) {
+    throw new errorHandler(
+      400,
+      "Fullname and email both are required for updation"
+    );
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.userDetails?._id,
+    {
+      $set: {
+        fullname,
+        email,
+      },
+    },
+    { new: true }
+  ).select("-password -refreshToken");
+
+  return res
+    .status(200)
+    .json(new responseHandler(user, "Fullname and email of user updated", 200));
+});
+
+const updateAvatar = asyncHandler(async (req, res) => {
+  const avatarLocalPath = req.file?.path;
+  if (!avatarLocalPath) {
+    throw new errorHandler(400, "new avatar is required");
+  }
+
+  const avatarCloudResponse = await uploadOnCloud(avatarLocalPath);
+  if (!avatarCloudResponse.url) {
+    throw new errorHandler(400, "new avatar is unable to get upload on cloud");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.userDetails?._id,
+    {
+      $set: {
+        avatar: avatarCloudResponse.url,
+      },
+    },
+    { new: true }
+  ).select("-password -refreshToken");
+
+  return res
+    .status(200)
+    .json(new responseHandler(user, "Avatar is updated", 200));
+});
+
+const updateCoverImage = asyncHandler(async (req, res) => {
+  const coverImageLocalPath = req.file?.path;
+  if (!coverImageLocalPath) {
+    throw new errorHandler(400, "new avatar is required");
+  }
+
+  const coverImageCloudResponse = await uploadOnCloud(coverImageLocalPath);
+  if (!coverImageCloudResponse.url) {
+    throw new errorHandler(400, "new avatar is unable to get upload on cloud");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.userDetails?._id,
+    {
+      $set: {
+        coverImage: coverImageCloudResponse.url,
+      },
+    },
+    { new: true }
+  ).select("-password -refreshToken");
+
+  return res
+    .status(200)
+    .json(new responseHandler(user, "Avatar is updated", 200));
+});
+
+module.exports = {
+  registerUser,
+  loginUser,
+  logoutUser,
+  refreshAccessToken,
+  updateAvatar,
+  updateCoverImage,
+  updateFullnameAndEmail,
+  updatePassword,
+  getCurrentUser,
+};
