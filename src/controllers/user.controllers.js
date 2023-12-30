@@ -4,6 +4,7 @@ const { uploadOnCloud } = require("../utils/cloudinary.js");
 const { responseHandler } = require("../utils/responseHandler.js");
 const User = require("../models/user.model.js");
 const jwt = require("jsonwebtoken");
+const { default: mongoose } = require("mongoose");
 
 const generateAccessAndRefreshToken = async (user_id) => {
   try {
@@ -335,6 +336,121 @@ const updateCoverImage = asyncHandler(async (req, res) => {
     .json(new responseHandler(user, "Avatar is updated", 200));
 });
 
+const getUserChannelInformation = asyncHandler(async (req, res) => {
+  const { username } = req.params;
+  if (!username) {
+    throw new errorHandler(400, "Username required");
+  }
+
+  const user = await User.aggregate([
+    // this will only select those data models which contains given username
+    {
+      $match: username?.toLowerCase(),
+    },
+    // isske kitne subscribers hai
+    {
+      $lookup: {
+        from: "$subscriptions",
+        localField: "_id",
+        foreignField: "channel",
+        as: "subscribers",
+      },
+    },
+    // iss ne kitno ko subscribe kiya hai
+    {
+      $lookup: {
+        from: "$subscriptions",
+        localField: "_id",
+        foreignField: "subscriber",
+        as: "channelsSubscribedTo",
+      },
+    },
+    {
+      $addFields: {
+        subscribersCount: {
+          $size: "$subscribers",
+        },
+        channelsSubscribedToCount: {
+          $size: "$channelsSubscribedTo",
+        },
+        isSubscribed: {
+          $cond: {
+            if: { $in: [req.userDetails?._id, "$subscribers.subscriber"] },
+            then: true,
+            else: false,
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        fullname: 1,
+        email: 1,
+        username: 1,
+        avatar: 1,
+        coverImage: 1,
+        subscribersCount: 1,
+        channelsSubscribedToCount: 1,
+        isSubscribed: 1,
+      },
+    },
+  ]);
+
+  return res
+    .status(200)
+    .json(new responseHandler(user, "Channel information given", 200));
+});
+
+const getWatchHistory = asyncHandler(async (req, res) => {
+  const history = await User.aggregate([
+    {
+      $match: new mongoose.Schema.ObjectId(req.userDetails?._id),
+    },
+    {
+      $lookup: {
+        from: "$videos",
+        localField: "watchHistory",
+        foreignField: "_id",
+        as: "watchHistory",
+        pipeline: [
+          {
+            $lookup: {
+              from: "$users",
+              localField: "owner",
+              foreignField: "_id",
+              as: "owner",
+              pipeline: {
+                $project: {
+                  fullname: 1,
+                  username: 1,
+                  avatar: 1,
+                },
+              },
+            },
+          },
+          {
+            $addFields: {
+              owner: {
+                $first: "$owner",
+              },
+            },
+          },
+        ],
+      },
+    },
+  ]);
+
+  return res
+    .status(200)
+    .json(
+      new responseHandler(
+        history[0].watchHistory,
+        "Got watch history of the user",
+        200
+      )
+    );
+});
+
 module.exports = {
   registerUser,
   loginUser,
@@ -345,4 +461,6 @@ module.exports = {
   updateFullnameAndEmail,
   updatePassword,
   getCurrentUser,
+  getUserChannelInformation,
+  getWatchHistory,
 };
